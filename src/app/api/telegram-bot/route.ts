@@ -68,12 +68,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  const returnUrl = new URL(siteUrl);
+  returnUrl.searchParams.set("telegram_token", token);
+
   await sendTelegramMessage(
     chatId,
     "Готово, Telegram подтвержден. Нажми кнопку ниже, чтобы вернуться на сайт.",
     siteUrl
       ? {
-          inline_keyboard: [[{ text: "Вернуться на сайт", url: siteUrl }]],
+          inline_keyboard: [[{ text: "Вернуться на сайт", url: returnUrl.toString() }]],
         }
       : undefined,
   );

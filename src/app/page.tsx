@@ -689,6 +689,19 @@ function TelegramLoginButton({
   const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const returnedToken = params.get("telegram_token");
+    if (!returnedToken) return;
+
+    params.delete("telegram_token");
+    const cleanQuery = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}${window.location.hash}`);
+    setToken(returnedToken);
+    setWaiting(true);
+    onMessage("Завершаю Telegram-вход...");
+  }, [onMessage]);
+
+  useEffect(() => {
     if (!token || !waiting) return;
 
     let attempts = 0;
