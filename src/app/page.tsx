@@ -24,6 +24,7 @@ export default function Home() {
 
   const selectedGame = games.find((game) => game.id === selectedGameId) || games[0];
   const isOwner = profile?.role === "owner";
+  const mySelectedReview = selectedGame && session?.user ? getUserReview(selectedGame, session.user.id) : null;
 
   const sortedGames = useMemo(() => {
     return [...games].sort((first, second) => total(publicReviews(second), "fun") - total(publicReviews(first), "fun"));
@@ -136,7 +137,6 @@ export default function Home() {
     const password = String(form.get("password") || "");
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-
     setAuthMessage(error ? "Не получилось войти. Проверь e-mail, пароль и подтверждение почты." : "");
   }
 
@@ -172,6 +172,26 @@ export default function Home() {
 
   async function signOut() {
     await supabase.auth.signOut();
+  }
+
+  async function updateProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session?.user) return;
+
+    const form = new FormData(event.currentTarget);
+    const displayName = String(form.get("displayName") || "").trim();
+    if (!displayName) return;
+
+    const { error } = await supabase.from("profiles").update({ display_name: displayName }).eq("id", session.user.id);
+
+    if (error) {
+      setFormMessage(error.message);
+      return;
+    }
+
+    setFormMessage("Ник обновлён.");
+    loadProfile();
+    loadGames();
   }
 
   async function addGame(event: FormEvent<HTMLFormElement>) {
@@ -243,7 +263,7 @@ export default function Home() {
     loadGames();
   }
 
-  async function addReview(event: FormEvent<HTMLFormElement>) {
+  async function saveReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.user || !selectedGame || !profile) return;
 
@@ -252,24 +272,41 @@ export default function Home() {
     const difficulty = Number(form.get("difficulty") || 5);
     const comment = String(form.get("comment") || "").trim();
     const reviewerName = profile.display_name || profile.email?.split("@")[0] || "Друг";
-
-    const { error } = await supabase.from("reviews").insert({
-      game_id: selectedGame.id,
-      user_id: session.user.id,
+    const existingReview = getUserReview(selectedGame, session.user.id);
+    const reviewPayload = {
       friend_name: reviewerName,
       fun,
       difficulty,
       comment,
       is_owner_review: isOwner,
-    });
+    };
+
+    const { error } = existingReview
+      ? await supabase.from("reviews").update(reviewPayload).eq("id", existingReview.id).eq("user_id", session.user.id)
+      : await supabase.from("reviews").insert({
+          game_id: selectedGame.id,
+          user_id: session.user.id,
+          ...reviewPayload,
+        });
 
     if (error) {
       setFormMessage(error.code === "23505" ? "Ты уже оставил оценку для этой игры." : error.message);
       return;
     }
 
-    event.currentTarget.reset();
-    setFormMessage(isOwner ? "Твоё мнение владельца сохранено отдельно." : "Оценка сохранена.");
+    if (!existingReview) {
+      event.currentTarget.reset();
+    }
+
+    setFormMessage(
+      existingReview
+        ? isOwner
+          ? "Твоё мнение владельца обновлено."
+          : "Оценка обновлена."
+        : isOwner
+          ? "Твоё мнение владельца сохранено отдельно."
+          : "Оценка сохранена.",
+    );
     loadGames();
   }
 
@@ -300,18 +337,10 @@ export default function Home() {
           <p className="eyebrow">Настольные игры</p>
           <h1>Моя полка игр</h1>
           <div className="auth-switch" role="tablist" aria-label="Вход или регистрация">
-            <button
-              className={authMode === "signin" ? "active" : ""}
-              onClick={() => setAuthMode("signin")}
-              type="button"
-            >
+            <button className={authMode === "signin" ? "active" : ""} onClick={() => setAuthMode("signin")} type="button">
               Вход
             </button>
-            <button
-              className={authMode === "signup" ? "active" : ""}
-              onClick={() => setAuthMode("signup")}
-              type="button"
-            >
+            <button className={authMode === "signup" ? "active" : ""} onClick={() => setAuthMode("signup")} type="button">
               Регистрация
             </button>
           </div>
@@ -415,6 +444,17 @@ export default function Home() {
 
       <section className="workspace">
         <aside className="panel input-panel">
+          <form onSubmit={updateProfile} className="stack profile-form">
+            <h2>Мой профиль</h2>
+            <label>
+              Ник
+              <input key={profile?.id} name="displayName" defaultValue={profile?.display_name || "Amiran"} required />
+            </label>
+            <button className="ghost-button" type="submit">
+              Сохранить ник
+            </button>
+          </form>
+
           {isOwner && (
             <>
               <form onSubmit={addGame} className="stack">
@@ -465,8 +505,20 @@ export default function Home() {
             </>
           )}
 
-          <form onSubmit={addReview} className={`stack ${isOwner ? "owner-review-form" : ""}`}>
-            <h2>{isOwner ? "Моя личная оценка" : "Добавить оценку"}</h2>
+          <form
+            key={`${selectedGame?.id || "none"}-${mySelectedReview?.id || "new"}`}
+            onSubmit={saveReview}
+            className={`stack ${isOwner ? "owner-review-form" : ""}`}
+          >
+            <h2>
+              {isOwner
+                ? mySelectedReview
+                  ? "Изменить моё мнение"
+                  : "Моя личная оценка"
+                : mySelectedReview
+                  ? "Изменить оценку"
+                  : "Добавить оценку"}
+            </h2>
             <label>
               Игра
               <select value={selectedGameId} onChange={(event) => setSelectedGameId(event.target.value)}>
@@ -479,18 +531,23 @@ export default function Home() {
             </label>
             <label>
               Насколько понравилось
-              <input name="fun" type="range" min="1" max="10" defaultValue="8" />
+              <input name="fun" type="range" min="1" max="10" defaultValue={mySelectedReview?.fun || 8} />
             </label>
             <label>
               Сложность
-              <input name="difficulty" type="range" min="1" max="10" defaultValue="5" />
+              <input name="difficulty" type="range" min="1" max="10" defaultValue={mySelectedReview?.difficulty || 5} />
             </label>
             <label>
               Комментарий
-              <textarea name="comment" rows={3} placeholder="Что понравилось или было сложно" />
+              <textarea
+                name="comment"
+                rows={3}
+                placeholder="Что понравилось или было сложно"
+                defaultValue={mySelectedReview?.comment || ""}
+              />
             </label>
             <button className="primary-button" type="submit" disabled={!selectedGame}>
-              {isOwner ? "Сохранить моё мнение" : "Сохранить оценку"}
+              {mySelectedReview ? "Обновить оценку" : isOwner ? "Сохранить моё мнение" : "Сохранить оценку"}
             </button>
           </form>
 
@@ -662,6 +719,10 @@ function publicReviews(game: Game) {
 
 function getOwnerReview(game: Game) {
   return game.reviews.find((review) => review.is_owner_review);
+}
+
+function getUserReview(game: Game, userId: string) {
+  return game.reviews.find((review) => review.user_id === userId) || null;
 }
 
 function displayReviewer(review: Review) {
