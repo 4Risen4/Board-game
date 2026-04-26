@@ -18,6 +18,12 @@ export type Profile = {
   role: "owner" | "friend";
 };
 
+export type ReviewProfile = {
+  display_name: string | null;
+  email: string | null;
+  role: "owner" | "friend";
+};
+
 export type Review = {
   id: string;
   game_id: string;
@@ -28,11 +34,7 @@ export type Review = {
   comment: string | null;
   is_owner_review: boolean;
   created_at: string;
-  profiles?: {
-    display_name: string | null;
-    email: string | null;
-    role: "owner" | "friend";
-  } | null;
+  profiles?: ReviewProfile | ReviewProfile[] | null;
 };
 
 export type Game = {
