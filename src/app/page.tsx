@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { Game, Profile, Review, ReviewProfile, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
+import type { Game, Profile, Review, ReviewProfile } from "@/lib/supabase";
 
 type View = "rating" | "details";
 type AuthMode = "signin" | "signup";
@@ -18,16 +19,26 @@ export default function Home() {
   const [authEmail, setAuthEmail] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [viewAsFriend, setViewAsFriend] = useState(false);
+  const [reviewFun, setReviewFun] = useState(8);
+  const [reviewDifficulty, setReviewDifficulty] = useState(5);
   const [authMessage, setAuthMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
   const selectedGame = games.find((game) => game.id === selectedGameId) || games[0];
   const isOwner = profile?.role === "owner";
+  const canManageGames = isOwner && !viewAsFriend;
+  const reviewFormLooksOwner = isOwner && !viewAsFriend;
   const mySelectedReview = selectedGame && session?.user ? getUserReview(selectedGame, session.user.id) : null;
 
   const sortedGames = useMemo(() => {
-    return [...games].sort((first, second) => total(publicReviews(second), "fun") - total(publicReviews(first), "fun"));
+    return [...games].sort((first, second) => {
+      const friendScoreDifference = total(publicReviews(second), "fun") - total(publicReviews(first), "fun");
+      if (friendScoreDifference !== 0) return friendScoreDifference;
+
+      return ownerTieScore(second) - ownerTieScore(first);
+    });
   }, [games]);
 
   const friendsCount = useMemo(() => {
@@ -70,6 +81,11 @@ export default function Home() {
     loadProfile();
     loadGames();
   }, [session]);
+
+  useEffect(() => {
+    setReviewFun(mySelectedReview?.fun || 8);
+    setReviewDifficulty(mySelectedReview?.difficulty || 5);
+  }, [mySelectedReview?.id, mySelectedReview?.fun, mySelectedReview?.difficulty, selectedGame?.id]);
 
   async function loadProfile() {
     const { data, error } = await supabase
@@ -137,6 +153,7 @@ export default function Home() {
     const password = String(form.get("password") || "");
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+
     setAuthMessage(error ? "Не получилось войти. Проверь e-mail, пароль и подтверждение почты." : "");
   }
 
@@ -196,7 +213,7 @@ export default function Home() {
 
   async function addGame(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isOwner) return;
+    if (!canManageGames) return;
 
     const form = new FormData(event.currentTarget);
     const title = String(form.get("title") || "").trim();
@@ -220,7 +237,7 @@ export default function Home() {
 
   async function updateGame(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isOwner || !selectedGame) return;
+    if (!canManageGames || !selectedGame) return;
 
     const form = new FormData(event.currentTarget);
     const title = String(form.get("editTitle") || "").trim();
@@ -247,8 +264,10 @@ export default function Home() {
   }
 
   async function deleteSelectedGame() {
-    if (!isOwner || !selectedGame) return;
-    const confirmed = window.confirm(`Удалить игру "${selectedGame.title}" вместе со всеми оценками?`);
+    if (!canManageGames || !selectedGame) return;
+    const confirmed = window.confirm(
+      `Удалить игру "${selectedGame.title}"? Вместе с ней удалятся все оценки и комментарии друзей.`,
+    );
     if (!confirmed) return;
 
     const { error } = await supabase.from("games").delete().eq("id", selectedGame.id);
@@ -263,7 +282,7 @@ export default function Home() {
     loadGames();
   }
 
-  async function saveReview(event: FormEvent<HTMLFormElement>) {
+  async function addReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.user || !selectedGame || !profile) return;
 
@@ -272,6 +291,7 @@ export default function Home() {
     const difficulty = Number(form.get("difficulty") || 5);
     const comment = String(form.get("comment") || "").trim();
     const reviewerName = profile.display_name || profile.email?.split("@")[0] || "Друг";
+
     const existingReview = getUserReview(selectedGame, session.user.id);
     const reviewPayload = {
       friend_name: reviewerName,
@@ -301,13 +321,24 @@ export default function Home() {
     setFormMessage(
       existingReview
         ? isOwner
-          ? "Твоё мнение владельца обновлено."
+          ? "Мнение Амирана обновлено."
           : "Оценка обновлена."
         : isOwner
-          ? "Твоё мнение владельца сохранено отдельно."
+          ? "Мнение Амирана сохранено отдельно."
           : "Оценка сохранена.",
     );
     loadGames();
+  }
+
+  async function copyShareLink() {
+    const link = window.location.origin;
+
+    try {
+      await navigator.clipboard.writeText(link);
+      setFormMessage("Ссылка скопирована. Можно отправлять друзьям.");
+    } catch {
+      setFormMessage(`Ссылка для друзей: ${link}`);
+    }
   }
 
   async function uploadCover(file: File) {
@@ -337,10 +368,18 @@ export default function Home() {
           <p className="eyebrow">Настольные игры</p>
           <h1>Моя полка игр</h1>
           <div className="auth-switch" role="tablist" aria-label="Вход или регистрация">
-            <button className={authMode === "signin" ? "active" : ""} onClick={() => setAuthMode("signin")} type="button">
+            <button
+              className={authMode === "signin" ? "active" : ""}
+              onClick={() => setAuthMode("signin")}
+              type="button"
+            >
               Вход
             </button>
-            <button className={authMode === "signup" ? "active" : ""} onClick={() => setAuthMode("signup")} type="button">
+            <button
+              className={authMode === "signup" ? "active" : ""}
+              onClick={() => setAuthMode("signup")}
+              type="button"
+            >
               Регистрация
             </button>
           </div>
@@ -430,11 +469,42 @@ export default function Home() {
         </div>
         <div className="user-box">
           <span>{profile?.display_name || profile?.email || session.user.email}</span>
+          {isOwner && (
+            <button
+              className={`mode-toggle ${viewAsFriend ? "active" : ""}`}
+              type="button"
+              onClick={() => setViewAsFriend((current) => !current)}
+              aria-pressed={viewAsFriend}
+            >
+              {viewAsFriend ? "Вид друга" : "Вид владельца"}
+            </button>
+          )}
+          <button className="ghost-button" type="button" onClick={copyShareLink}>
+            Скопировать ссылку
+          </button>
           <button className="ghost-button" type="button" onClick={signOut}>
             Выйти
           </button>
         </div>
       </header>
+
+      {isOwner && (
+        <section className={`mode-banner ${viewAsFriend ? "friend" : "owner"}`}>
+          <strong>{viewAsFriend ? "Смотришь как друг" : "Режим владельца"}</strong>
+          <span>
+            {viewAsFriend
+              ? "Админские формы скрыты, чтобы проверить обычный вид сайта."
+              : "Можно добавлять, менять и удалять игры."}
+          </span>
+        </section>
+      )}
+
+      {!canManageGames && (
+        <section className="mode-banner friend">
+          <strong>Быстрый старт</strong>
+          <span>Нажми на игру, поставь оценку и оставь комментарий. Если уже оценил игру, оценку можно изменить.</span>
+        </section>
+      )}
 
       <section className="summary-grid">
         <Summary value={games.length} label="игр" />
@@ -455,7 +525,7 @@ export default function Home() {
             </button>
           </form>
 
-          {isOwner && (
+          {canManageGames && (
             <>
               <form onSubmit={addGame} className="stack">
                 <h2>Добавить игру</h2>
@@ -505,52 +575,6 @@ export default function Home() {
             </>
           )}
 
-          <form
-            key={`${selectedGame?.id || "none"}-${mySelectedReview?.id || "new"}`}
-            onSubmit={saveReview}
-            className={`stack ${isOwner ? "owner-review-form" : ""}`}
-          >
-            <h2>
-              {isOwner
-                ? mySelectedReview
-                  ? "Изменить моё мнение"
-                  : "Моя личная оценка"
-                : mySelectedReview
-                  ? "Изменить оценку"
-                  : "Добавить оценку"}
-            </h2>
-            <label>
-              Игра
-              <select value={selectedGameId} onChange={(event) => setSelectedGameId(event.target.value)}>
-                {games.map((game) => (
-                  <option key={game.id} value={game.id}>
-                    {game.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Насколько понравилось
-              <input name="fun" type="range" min="1" max="10" defaultValue={mySelectedReview?.fun || 8} />
-            </label>
-            <label>
-              Сложность
-              <input name="difficulty" type="range" min="1" max="10" defaultValue={mySelectedReview?.difficulty || 5} />
-            </label>
-            <label>
-              Комментарий
-              <textarea
-                name="comment"
-                rows={3}
-                placeholder="Что понравилось или было сложно"
-                defaultValue={mySelectedReview?.comment || ""}
-              />
-            </label>
-            <button className="primary-button" type="submit" disabled={!selectedGame}>
-              {mySelectedReview ? "Обновить оценку" : isOwner ? "Сохранить моё мнение" : "Сохранить оценку"}
-            </button>
-          </form>
-
           {formMessage && <p className="form-message">{formMessage}</p>}
         </aside>
 
@@ -572,15 +596,29 @@ export default function Home() {
               </div>
               <div className="ranking-list">
                 {sortedGames.map((game, index) => (
-                  <GameCard
-                    key={game.id}
-                    game={game}
-                    rank={index + 1}
-                    selected={game.id === selectedGame?.id}
-                    onSelect={() => setSelectedGameId(game.id)}
-                  />
+                  <div className="ranking-item" key={game.id}>
+                    <GameCard
+                      game={game}
+                      rank={index + 1}
+                      selected={game.id === selectedGame?.id}
+                      userReviewed={session.user ? Boolean(getUserReview(game, session.user.id)) : false}
+                      onSelect={() => setSelectedGameId(game.id)}
+                    />
+                    {game.id === selectedGame?.id && (
+                      <RatingComments
+                        game={game}
+                        selectedReview={mySelectedReview}
+                        reviewFormLooksOwner={reviewFormLooksOwner}
+                        reviewFun={reviewFun}
+                        reviewDifficulty={reviewDifficulty}
+                        setReviewFun={setReviewFun}
+                        setReviewDifficulty={setReviewDifficulty}
+                        onSubmit={addReview}
+                      />
+                    )}
+                  </div>
                 ))}
-                {!games.length && <div className="empty-state">Пока нет игр.</div>}
+                {!games.length && <div className="empty-state">Пока нет игр. Сначала добавь игру, а потом друзья смогут её оценить.</div>}
               </div>
             </section>
           ) : (
@@ -590,15 +628,14 @@ export default function Home() {
                   <h2>Кто какие оценки поставил</h2>
                   <p>Выбери игру и смотри все мнения отдельно.</p>
                 </div>
-                <select value={selectedGame?.id || ""} onChange={(event) => setSelectedGameId(event.target.value)}>
-                  {games.map((game) => (
-                    <option key={game.id} value={game.id}>
-                      {game.title}
-                    </option>
-                  ))}
-                </select>
               </div>
-              {selectedGame ? <ReviewDetails game={selectedGame} /> : <div className="empty-state">Пока нет игр.</div>}
+              <GamePicker
+                games={games}
+                selectedGameId={selectedGame?.id || ""}
+                currentUserId={session.user.id}
+                onSelect={setSelectedGameId}
+              />
+              {!games.length && <div className="empty-state">Пока нет игр. Когда появится первая игра, здесь будут оценки друзей.</div>}
             </section>
           )}
         </section>
@@ -616,15 +653,54 @@ function Summary({ value, label }: { value: number; label: string }) {
   );
 }
 
+function GamePicker({
+  games,
+  selectedGameId,
+  currentUserId,
+  onSelect,
+}: {
+  games: Game[];
+  selectedGameId: string;
+  currentUserId: string;
+  onSelect: (gameId: string) => void;
+}) {
+  if (!games.length) {
+    return null;
+  }
+
+  return (
+    <div className="game-picker" aria-label="Выбор игры">
+      {games.map((game) => (
+        <div className="game-picker-item" key={game.id}>
+          <button
+            className={`game-picker-button ${game.id === selectedGameId ? "selected" : ""}`}
+            type="button"
+            onClick={() => onSelect(game.id)}
+          >
+            <GameThumb game={game} />
+            <span>
+              {game.title}
+              {getUserReview(game, currentUserId) && <small>Ты уже оценил</small>}
+            </span>
+          </button>
+          {game.id === selectedGameId && <ReviewDetails game={game} compact />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function GameCard({
   game,
   rank,
   selected,
+  userReviewed,
   onSelect,
 }: {
   game: Game;
   rank: number;
   selected: boolean;
+  userReviewed: boolean;
   onSelect: () => void;
 }) {
   const friendReviews = publicReviews(game);
@@ -640,7 +716,8 @@ function GameCard({
         <h3>{game.title}</h3>
         <p>{game.description || "Описание пока не добавлено."}</p>
         <span className="review-count">{friendReviews.length} оценок друзей</span>
-        {ownerReview && <span className="owner-mark">Есть мнение владельца</span>}
+        {userReviewed && <span className="reviewed-mark">Ты уже оценил</span>}
+        {ownerReview && <span className="owner-mark">Есть мнение Амирана</span>}
       </div>
       <div className="score-grid">
         <Score label="Популярность" value={funAverage} />
@@ -650,19 +727,21 @@ function GameCard({
   );
 }
 
-function ReviewDetails({ game }: { game: Game }) {
+function ReviewDetails({ game, compact = false }: { game: Game; compact?: boolean }) {
   const ownerReview = getOwnerReview(game);
   const friendReviews = publicReviews(game);
 
   return (
-    <div className="review-details">
-      <article className="selected-game-summary">
-        <Cover game={game} />
-        <div>
-          <h3>{game.title}</h3>
-          <p>{game.description || "Описание пока не добавлено."}</p>
-        </div>
-      </article>
+    <div className={`review-details ${compact ? "compact" : ""}`}>
+      {!compact && (
+        <article className="selected-game-summary">
+          <Cover game={game} />
+          <div>
+            <h3>{game.title}</h3>
+            <p>{game.description || "Описание пока не добавлено."}</p>
+          </div>
+        </article>
+      )}
 
       {ownerReview && <ReviewRow game={game} review={ownerReview} owner />}
 
@@ -670,8 +749,161 @@ function ReviewDetails({ game }: { game: Game }) {
         <ReviewRow game={game} review={review} key={review.id} />
       ))}
 
-      {!ownerReview && !friendReviews.length && <div className="empty-state">У этой игры пока нет оценок.</div>}
+      {!ownerReview && !friendReviews.length && (
+        <div className="empty-state">У этой игры пока нет оценок. Можно выбрать её в рейтинге и оставить первое мнение.</div>
+      )}
     </div>
+  );
+}
+
+function RatingComments({
+  game,
+  selectedReview,
+  reviewFormLooksOwner,
+  reviewFun,
+  reviewDifficulty,
+  setReviewFun,
+  setReviewDifficulty,
+  onSubmit,
+}: {
+  game: Game;
+  selectedReview: Review | null;
+  reviewFormLooksOwner: boolean;
+  reviewFun: number;
+  reviewDifficulty: number;
+  setReviewFun: (value: number) => void;
+  setReviewDifficulty: (value: number) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const comments = publicReviews(game).filter((review) => (review.comment || "").trim());
+
+  return (
+    <section className="rating-comments">
+      <ReviewEditor
+        game={game}
+        selectedReview={selectedReview}
+        reviewFormLooksOwner={reviewFormLooksOwner}
+        reviewFun={reviewFun}
+        reviewDifficulty={reviewDifficulty}
+        setReviewFun={setReviewFun}
+        setReviewDifficulty={setReviewDifficulty}
+        onSubmit={onSubmit}
+      />
+
+      <div className="rating-comments-header">
+        <div>
+          <span>Комментарии друзей</span>
+          <h3>{game.title}</h3>
+        </div>
+        <strong>{comments.length}</strong>
+      </div>
+
+      {comments.length ? (
+        <div className="comment-list">
+          {comments.map((review) => (
+            <article className="comment-card" key={review.id}>
+              <div>
+                <strong>{displayReviewer(review)}</strong>
+                <p>{review.comment || ""}</p>
+              </div>
+              <div className="comment-scores">
+                <span>Понравилось {review.fun}/10</span>
+                <span>Сложность {review.difficulty}/10</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">Пока нет комментариев друзей. Оставь первый комментарий после оценки.</div>
+      )}
+    </section>
+  );
+}
+
+function ReviewEditor({
+  game,
+  selectedReview,
+  reviewFormLooksOwner,
+  reviewFun,
+  reviewDifficulty,
+  setReviewFun,
+  setReviewDifficulty,
+  onSubmit,
+}: {
+  game: Game;
+  selectedReview: Review | null;
+  reviewFormLooksOwner: boolean;
+  reviewFun: number;
+  reviewDifficulty: number;
+  setReviewFun: (value: number) => void;
+  setReviewDifficulty: (value: number) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form
+      key={`${game.id}-${selectedReview?.id || "new"}`}
+      onSubmit={onSubmit}
+      className={`inline-review-form ${reviewFormLooksOwner ? "owner-review-form" : ""}`}
+    >
+      <div className="inline-review-heading">
+        <div>
+          <span>{game.title}</span>
+          <h3>
+            {reviewFormLooksOwner
+              ? selectedReview
+                ? "Изменить мнение Амирана"
+                : "Мнение Амирана"
+              : selectedReview
+                ? "Изменить оценку"
+                : "Добавить оценку"}
+          </h3>
+        </div>
+        <button className="primary-button" type="submit">
+          {selectedReview ? "Обновить" : reviewFormLooksOwner ? "Сохранить мнение" : "Сохранить оценку"}
+        </button>
+      </div>
+
+      <div className="inline-review-grid">
+        <label>
+          <span className="slider-label">
+            Насколько понравилось
+            <strong>{reviewFun}/10</strong>
+          </span>
+          <input
+            name="fun"
+            type="range"
+            min="1"
+            max="10"
+            value={reviewFun}
+            onChange={(event) => setReviewFun(Number(event.target.value))}
+          />
+        </label>
+        <label>
+          <span className="slider-label">
+            Сложность
+            <strong>{reviewDifficulty}/10</strong>
+          </span>
+          <input
+            name="difficulty"
+            type="range"
+            min="1"
+            max="10"
+            value={reviewDifficulty}
+            onChange={(event) => setReviewDifficulty(Number(event.target.value))}
+          />
+        </label>
+      </div>
+
+      <label>
+        Комментарий
+        <textarea
+          name="comment"
+          rows={3}
+          placeholder="Что понравилось или было сложно"
+          defaultValue={selectedReview?.comment || ""}
+        />
+      </label>
+    </form>
   );
 }
 
@@ -679,7 +911,7 @@ function ReviewRow({ game, review, owner = false }: { game: Game; review: Review
   return (
     <div className={`review-row ${owner ? "owner-review" : ""}`}>
       <div>
-        <strong>{owner ? "Моё мнение владельца" : displayReviewer(review)}</strong>
+        <strong>{owner ? "Мнение Амирана" : displayReviewer(review)}</strong>
         <span>{game.title}</span>
         <p className={`review-comment ${review.comment ? "" : "muted-comment"}`}>
           {review.comment || "Без комментария"}
@@ -697,6 +929,14 @@ function Cover({ game }: { game: Game }) {
   }
 
   return <div className="game-cover cover-placeholder">{initials(game.title)}</div>;
+}
+
+function GameThumb({ game }: { game: Game }) {
+  if (game.cover_url) {
+    return <img className="game-picker-cover" src={game.cover_url} alt={`Обложка ${game.title}`} />;
+  }
+
+  return <div className="game-picker-cover game-picker-placeholder">{initials(game.title)}</div>;
 }
 
 function Score({ label, value, difficulty = false }: { label: string; value: number; difficulty?: boolean }) {
@@ -719,6 +959,10 @@ function publicReviews(game: Game) {
 
 function getOwnerReview(game: Game) {
   return game.reviews.find((review) => review.is_owner_review);
+}
+
+function ownerTieScore(game: Game) {
+  return getOwnerReview(game)?.fun || 0;
 }
 
 function getUserReview(game: Game, userId: string) {
