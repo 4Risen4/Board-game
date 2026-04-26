@@ -1,15 +1,33 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Game, Profile, Review, ReviewProfile } from "@/lib/supabase";
 
 type View = "rating" | "details";
 type AuthMode = "signin" | "signup";
+type TelegramUser = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+};
+
+declare global {
+  interface Window {
+    boardGamesTelegramAuth?: (user: TelegramUser) => void;
+  }
+}
 
 const bucketName = "covers";
 const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim();
+const isLocalhost =
+  typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
@@ -26,6 +44,7 @@ export default function Home() {
   const [reviewDifficulty, setReviewDifficulty] = useState(5);
   const [authMessage, setAuthMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
+  const [telegramMessage, setTelegramMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
   const selectedGame = games.find((game) => game.id === selectedGameId) || games[0];
@@ -89,10 +108,64 @@ export default function Home() {
     setReviewDifficulty(mySelectedReview?.difficulty || 5);
   }, [mySelectedReview?.id, mySelectedReview?.fun, mySelectedReview?.difficulty, selectedGame?.id]);
 
+  useEffect(() => {
+    window.boardGamesTelegramAuth = async (telegramUser) => {
+      setTelegramMessage("");
+      const isLinking = Boolean(session?.access_token);
+
+      const response = await fetch("/api/telegram-auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ mode: isLinking ? "link" : "signin", user: telegramUser }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        const message = result.error || "Telegram пока не удалось подключить.";
+        isLinking ? setFormMessage(message) : setAuthMessage(message);
+        return;
+      }
+
+      if (result.redirectUrl) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
+
+      if (session?.user && result.telegramUser) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            telegram_id: String(result.telegramUser.id),
+            telegram_username: result.telegramUser.username || null,
+            telegram_first_name: result.telegramUser.first_name || null,
+            telegram_last_name: result.telegramUser.last_name || null,
+            telegram_photo_url: result.telegramUser.photo_url || null,
+            telegram_linked_at: new Date().toISOString(),
+          })
+          .eq("id", session.user.id);
+
+        if (error) {
+          setFormMessage(error.message);
+          return;
+        }
+
+        setFormMessage("Telegram привязан к аккаунту.");
+        loadProfile();
+      }
+    };
+
+    return () => {
+      delete window.boardGamesTelegramAuth;
+    };
+  }, [session?.access_token, session?.user]);
+
   async function loadProfile() {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id,email,display_name,role")
+      .select("id,email,display_name,role,telegram_id,telegram_username,telegram_first_name,telegram_last_name,telegram_photo_url,telegram_linked_at")
       .eq("id", session?.user.id)
       .single();
 
@@ -435,7 +508,10 @@ export default function Home() {
             </form>
           )}
 
+          <TelegramLoginButton />
+
           {authMessage && <p className="form-message calm">{authMessage}</p>}
+          {telegramMessage && <p className="form-message calm">{telegramMessage}</p>}
         </section>
       </main>
     );
@@ -525,6 +601,19 @@ export default function Home() {
             <button className="ghost-button" type="submit">
               Сохранить ник
             </button>
+            <div className="telegram-card">
+              <div>
+                <strong>Telegram</strong>
+                <span>
+                  {profile?.telegram_username
+                    ? `@${profile.telegram_username}`
+                    : profile?.telegram_id
+                      ? "Привязан"
+                      : "Можно привязать для быстрого входа"}
+                </span>
+              </div>
+              <TelegramLoginButton compact />
+            </div>
           </form>
 
           {canManageGames && (
@@ -648,6 +737,45 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function TelegramLoginButton({ compact = false }: { compact?: boolean }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !telegramBotUsername) return;
+
+    container.innerHTML = "";
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.async = true;
+    script.setAttribute("data-telegram-login", telegramBotUsername.replace(/^@/, ""));
+    script.setAttribute("data-size", compact ? "small" : "large");
+    script.setAttribute("data-radius", "8");
+    script.setAttribute("data-userpic", "false");
+    script.setAttribute("data-request-access", "write");
+    script.setAttribute("data-onauth", "boardGamesTelegramAuth(user)");
+    container.appendChild(script);
+
+    return () => {
+      container.innerHTML = "";
+    };
+  }, [compact]);
+
+  if (!telegramBotUsername) {
+    return <p className="telegram-note">Telegram-вход появится после настройки бота.</p>;
+  }
+
+  if (isLocalhost) {
+    return (
+      <p className="telegram-note">
+        Telegram проверим на онлайн-сайте: локальный адрес не проходит проверку домена.
+      </p>
+    );
+  }
+
+  return <div className={`telegram-login ${compact ? "compact" : ""}`} ref={containerRef} />;
 }
 
 function Summary({ value, label }: { value: number; label: string }) {

@@ -7,6 +7,12 @@ create table public.profiles (
   email text,
   display_name text,
   role public.app_role not null default 'friend',
+  telegram_id text unique,
+  telegram_username text,
+  telegram_first_name text,
+  telegram_last_name text,
+  telegram_photo_url text,
+  telegram_linked_at timestamptz,
   created_at timestamptz not null default now()
 );
 

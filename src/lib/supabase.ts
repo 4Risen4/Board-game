@@ -16,6 +16,12 @@ export type Profile = {
   email: string | null;
   display_name: string | null;
   role: "owner" | "friend";
+  telegram_id: string | null;
+  telegram_username: string | null;
+  telegram_first_name: string | null;
+  telegram_last_name: string | null;
+  telegram_photo_url: string | null;
+  telegram_linked_at: string | null;
 };
 
 export type Review = {
