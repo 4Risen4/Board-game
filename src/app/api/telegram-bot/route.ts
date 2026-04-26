@@ -70,7 +70,12 @@ export async function POST(request: Request) {
 
   await sendTelegramMessage(
     chatId,
-    `Готово, Telegram подтвержден. Вернись на сайт${siteUrl ? ` ${siteUrl}` : ""} — он сам продолжит вход.`,
+    "Готово, Telegram подтвержден. Нажми кнопку ниже, чтобы вернуться на сайт.",
+    siteUrl
+      ? {
+          inline_keyboard: [[{ text: "Вернуться на сайт", url: siteUrl }]],
+        }
+      : undefined,
   );
 
   return NextResponse.json({ ok: true });
@@ -80,10 +85,10 @@ export async function GET() {
   return NextResponse.json({ ok: true });
 }
 
-async function sendTelegramMessage(chatId: number, text: string) {
+async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: object) {
   await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text, reply_markup: replyMarkup }),
   }).catch(() => undefined);
 }
