@@ -1,33 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Game, Profile, Review, ReviewProfile } from "@/lib/supabase";
 
 type View = "rating" | "details";
 type AuthMode = "signin" | "signup";
-type TelegramUser = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
-};
-
-declare global {
-  interface Window {
-    boardGamesTelegramAuth?: (user: TelegramUser) => void;
-  }
-}
 
 const bucketName = "covers";
 const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim() || "my_board_games_auth_bot";
-const isLocalhost =
-  typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
@@ -44,7 +27,6 @@ export default function Home() {
   const [reviewDifficulty, setReviewDifficulty] = useState(5);
   const [authMessage, setAuthMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
-  const [telegramMessage, setTelegramMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
   const selectedGame = games.find((game) => game.id === selectedGameId) || games[0];
@@ -107,60 +89,6 @@ export default function Home() {
     setReviewFun(mySelectedReview?.fun || 8);
     setReviewDifficulty(mySelectedReview?.difficulty || 5);
   }, [mySelectedReview?.id, mySelectedReview?.fun, mySelectedReview?.difficulty, selectedGame?.id]);
-
-  useEffect(() => {
-    window.boardGamesTelegramAuth = async (telegramUser) => {
-      setTelegramMessage("");
-      const isLinking = Boolean(session?.access_token);
-
-      const response = await fetch("/api/telegram-auth", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ mode: isLinking ? "link" : "signin", user: telegramUser }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        const message = result.error || "Telegram пока не удалось подключить.";
-        isLinking ? setFormMessage(message) : setAuthMessage(message);
-        return;
-      }
-
-      if (result.redirectUrl) {
-        window.location.href = result.redirectUrl;
-        return;
-      }
-
-      if (session?.user && result.telegramUser) {
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            telegram_id: String(result.telegramUser.id),
-            telegram_username: result.telegramUser.username || null,
-            telegram_first_name: result.telegramUser.first_name || null,
-            telegram_last_name: result.telegramUser.last_name || null,
-            telegram_photo_url: result.telegramUser.photo_url || null,
-            telegram_linked_at: new Date().toISOString(),
-          })
-          .eq("id", session.user.id);
-
-        if (error) {
-          setFormMessage(error.message);
-          return;
-        }
-
-        setFormMessage("Telegram привязан к аккаунту.");
-        loadProfile();
-      }
-    };
-
-    return () => {
-      delete window.boardGamesTelegramAuth;
-    };
-  }, [session?.access_token, session?.user]);
 
   async function loadProfile() {
     const { data, error } = await supabase
@@ -508,10 +436,9 @@ export default function Home() {
             </form>
           )}
 
-          <TelegramLoginButton />
+          <TelegramLoginButton session={session} onMessage={setAuthMessage} />
 
           {authMessage && <p className="form-message calm">{authMessage}</p>}
-          {telegramMessage && <p className="form-message calm">{telegramMessage}</p>}
         </section>
       </main>
     );
@@ -612,7 +539,15 @@ export default function Home() {
                       : "Можно привязать для быстрого входа"}
                 </span>
               </div>
-              <TelegramLoginButton compact />
+              <TelegramLoginButton
+                compact
+                session={session}
+                onLinked={() => {
+                  setFormMessage("Telegram привязан к аккаунту.");
+                  loadProfile();
+                }}
+                onMessage={setFormMessage}
+              />
             </div>
           </form>
 
@@ -739,43 +674,94 @@ export default function Home() {
   );
 }
 
-function TelegramLoginButton({ compact = false }: { compact?: boolean }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+function TelegramLoginButton({
+  compact = false,
+  session,
+  onLinked,
+  onMessage,
+}: {
+  compact?: boolean;
+  session: Session | null;
+  onLinked?: () => void;
+  onMessage: (message: string) => void;
+}) {
+  const [token, setToken] = useState("");
+  const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !telegramBotUsername) return;
+    if (!token || !waiting) return;
 
-    container.innerHTML = "";
-    const script = document.createElement("script");
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.async = true;
-    script.setAttribute("data-telegram-login", telegramBotUsername.replace(/^@/, ""));
-    script.setAttribute("data-size", compact ? "small" : "large");
-    script.setAttribute("data-radius", "8");
-    script.setAttribute("data-userpic", "false");
-    script.setAttribute("data-request-access", "write");
-    script.setAttribute("data-onauth", "boardGamesTelegramAuth(user)");
-    container.appendChild(script);
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      const response = await fetch(`/api/telegram-start?token=${encodeURIComponent(token)}`);
+      const result = await response.json();
 
-    return () => {
-      container.innerHTML = "";
-    };
-  }, [compact]);
+      if (result.status === "pending" && attempts < 120) return;
+
+      window.clearInterval(timer);
+      setWaiting(false);
+      setToken("");
+
+      if (result.redirectUrl) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
+
+      if (result.status === "linked") {
+        onLinked?.();
+        return;
+      }
+
+      onMessage(result.error || "Telegram не подтвердил вход. Попробуй еще раз.");
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [onLinked, onMessage, token, waiting]);
+
+  async function startTelegramLogin() {
+    onMessage("");
+    setWaiting(true);
+
+    const response = await fetch("/api/telegram-start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ mode: session?.access_token ? "link" : "signin" }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      setWaiting(false);
+      onMessage(result.error || "Telegram-вход пока не удалось начать.");
+      return;
+    }
+
+    setToken(result.token);
+    onMessage("Открой Telegram, нажми Start у бота, потом вернись сюда. Сайт сам продолжит.");
+
+    const opened = window.open(result.botUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.href = result.botUrl;
+    }
+  }
 
   if (!telegramBotUsername) {
     return <p className="telegram-note">Telegram-вход появится после настройки бота.</p>;
   }
 
-  if (isLocalhost) {
-    return (
-      <p className="telegram-note">
-        Telegram проверим на онлайн-сайте: локальный адрес не проходит проверку домена.
-      </p>
-    );
-  }
-
-  return <div className={`telegram-login ${compact ? "compact" : ""}`} ref={containerRef} />;
+  return (
+    <button
+      className={`telegram-login-button ${compact ? "compact" : ""}`}
+      type="button"
+      onClick={startTelegramLogin}
+      disabled={waiting}
+    >
+      {waiting ? "Жду Telegram..." : compact ? "Привязать Telegram" : "Войти через Telegram"}
+    </button>
+  );
 }
 
 function Summary({ value, label }: { value: number; label: string }) {

@@ -199,6 +199,29 @@ h2 {
   margin-top: 8px;
 }
 
+.telegram-login-button {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #2aabee;
+  box-shadow: 0 12px 22px rgba(42, 171, 238, 0.18);
+  font-weight: 900;
+}
+
+.telegram-login-button.compact {
+  min-height: 38px;
+  margin-top: 0;
+  font-size: 0.86rem;
+}
+
+.telegram-login-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .telegram-note {
   margin: 10px 0 0;
   border: 1px dashed rgba(53, 107, 154, 0.3);
