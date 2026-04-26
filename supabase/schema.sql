@@ -27,6 +27,7 @@ create table public.reviews (
   fun int not null check (fun between 1 and 10),
   difficulty int not null check (difficulty between 1 and 10),
   comment text,
+  is_owner_review boolean not null default false,
   created_at timestamptz not null default now(),
   unique (game_id, user_id)
 );
@@ -95,6 +96,11 @@ to authenticated
 using (public.is_owner())
 with check (public.is_owner());
 
+create policy "owners can delete games"
+on public.games for delete
+to authenticated
+using (public.is_owner());
+
 create policy "everyone signed in can read reviews"
 on public.reviews for select
 to authenticated
@@ -103,7 +109,7 @@ using (true);
 create policy "friends can create their own reviews"
 on public.reviews for insert
 to authenticated
-with check (auth.uid() = user_id);
+with check (auth.uid() = user_id and (is_owner_review = false or public.is_owner()));
 
 create policy "owners can manage all reviews"
 on public.reviews for all
