@@ -22,6 +22,13 @@ type TelegramRequest = {
   expires_at: string;
 };
 
+type ProfileLogin = {
+  id: string;
+  email: string | null;
+};
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
 export async function POST(request: Request) {
   if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey || !telegramBotUsername) {
     return NextResponse.json({ error: "Telegram-вход пока не настроен." }, { status: 503 });
@@ -109,53 +116,23 @@ export async function GET(request: Request) {
   }
 
   if (data.mode === "link") {
-    if (!data.user_id) {
-      return NextResponse.json({ status: "error", error: "Сессия привязки потерялась. Попробуй еще раз." }, { status: 400 });
-    }
-
-    const { error: updateError } = await admin
-      .from("profiles")
-      .update({
-        telegram_id: data.telegram_id,
-        telegram_username: data.telegram_username,
-        telegram_first_name: data.telegram_first_name,
-        telegram_last_name: data.telegram_last_name,
-        telegram_photo_url: data.telegram_photo_url,
-        telegram_linked_at: new Date().toISOString(),
-      })
-      .eq("id", data.user_id);
-
-    if (updateError) {
-      return NextResponse.json({ status: "error", error: updateError.message }, { status: 500 });
+    const linkResult = await linkTelegramProfile(admin, data);
+    if ("error" in linkResult) {
+      return NextResponse.json({ status: "error", error: linkResult.error }, { status: 500 });
     }
 
     await admin.from("telegram_login_requests").delete().eq("token", token);
     return NextResponse.json({ status: "linked" });
   }
 
-  const { data: profile, error: profileError } = await admin
-    .from("profiles")
-    .select("email")
-    .eq("telegram_id", data.telegram_id)
-    .maybeSingle<{ email: string | null }>();
-
-  if (profileError) {
-    return NextResponse.json({ status: "error", error: profileError.message }, { status: 500 });
-  }
-
-  if (!profile?.email) {
-    return NextResponse.json(
-      {
-        status: "error",
-        error: "Этот Telegram еще не привязан к аккаунту. Сначала войди по e-mail и привяжи Telegram в профиле.",
-      },
-      { status: 404 },
-    );
+  const profileResult = await findOrCreateTelegramProfile(admin, data);
+  if ("error" in profileResult) {
+    return NextResponse.json({ status: "error", error: profileResult.error }, { status: 500 });
   }
 
   const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
     type: "magiclink",
-    email: profile.email,
+    email: profileResult.profile.email,
     options: {
       redirectTo: process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin,
     },
@@ -174,4 +151,101 @@ function createAdminClient() {
   return createClient(supabaseUrl!, serviceRoleKey!, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+async function linkTelegramProfile(admin: AdminClient, data: TelegramRequest) {
+  if (!data.user_id) {
+    return { error: "Сессия привязки потерялась. Попробуй еще раз." };
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update(getTelegramProfileFields(data))
+    .eq("id", data.user_id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { ok: true };
+}
+
+async function findOrCreateTelegramProfile(admin: AdminClient, data: TelegramRequest) {
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("id,email")
+    .eq("telegram_id", data.telegram_id)
+    .maybeSingle<ProfileLogin>();
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
+  if (profile?.email) {
+    return { profile: { id: profile.id, email: profile.email } };
+  }
+
+  return createTelegramProfile(admin, data);
+}
+
+async function createTelegramProfile(admin: AdminClient, data: TelegramRequest) {
+  if (!data.telegram_id) {
+    return { error: "Telegram не прислал профиль. Попробуй еще раз." };
+  }
+
+  const email = `telegram-${data.telegram_id}@telegram.board-game.local`;
+  const displayName = getTelegramDisplayName(data);
+  const { data: createdUser, error: createError } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: { display_name: displayName },
+  });
+
+  if (createError && !createError.message.toLowerCase().includes("already")) {
+    return { error: createError.message };
+  }
+
+  let userId = createdUser.user?.id || null;
+  if (!userId) {
+    const { data: existingProfile, error: existingError } = await admin
+      .from("profiles")
+      .select("id,email")
+      .eq("email", email)
+      .maybeSingle<ProfileLogin>();
+
+    if (existingError || !existingProfile) {
+      return { error: existingError?.message || "Не получилось создать Telegram-аккаунт." };
+    }
+    userId = existingProfile.id;
+  }
+
+  const { error: profileError } = await admin.from("profiles").upsert({
+    id: userId,
+    email,
+    display_name: displayName,
+    role: "friend",
+    ...getTelegramProfileFields(data),
+  });
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
+  return { profile: { id: userId, email } };
+}
+
+function getTelegramProfileFields(data: TelegramRequest) {
+  return {
+    telegram_id: data.telegram_id,
+    telegram_username: data.telegram_username,
+    telegram_first_name: data.telegram_first_name,
+    telegram_last_name: data.telegram_last_name,
+    telegram_photo_url: data.telegram_photo_url,
+    telegram_linked_at: new Date().toISOString(),
+  };
+}
+
+function getTelegramDisplayName(data: TelegramRequest) {
+  const fullName = [data.telegram_first_name, data.telegram_last_name].filter(Boolean).join(" ").trim();
+  return fullName || data.telegram_username || `Telegram ${data.telegram_id}`;
 }
