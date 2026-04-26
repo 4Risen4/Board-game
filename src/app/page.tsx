@@ -25,7 +25,7 @@ declare global {
 
 const bucketName = "covers";
 const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim();
+const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim() || "my_board_games_auth_bot";
 const isLocalhost =
   typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
