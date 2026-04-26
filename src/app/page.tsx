@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { Game, Profile, Review, supabase } from "@/lib/supabase";
+import { Game, Profile, Review, ReviewProfile, supabase } from "@/lib/supabase";
 
 type View = "rating" | "details";
 type AuthMode = "signin" | "signup";
@@ -95,7 +95,7 @@ export default function Home() {
       return;
     }
 
-    const loadedGames = (data || []) as Game[];
+    const loadedGames = (data || []) as unknown as Game[];
     setGames(loadedGames);
     setSelectedGameId((current) => current || loadedGames[0]?.id || "");
   }
@@ -665,7 +665,16 @@ function getOwnerReview(game: Game) {
 }
 
 function displayReviewer(review: Review) {
-  return review.profiles?.display_name || review.friend_name || review.profiles?.email?.split("@")[0] || "Друг";
+  const reviewerProfile = getReviewProfile(review.profiles);
+  return reviewerProfile?.display_name || review.friend_name || reviewerProfile?.email?.split("@")[0] || "Друг";
+}
+
+function getReviewProfile(profile: Review["profiles"]): ReviewProfile | null {
+  if (Array.isArray(profile)) {
+    return profile[0] || null;
+  }
+
+  return profile || null;
 }
 
 function average(reviews: Review[], field: "fun" | "difficulty") {
