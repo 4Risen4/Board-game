@@ -26,7 +26,13 @@ export type Review = {
   fun: number;
   difficulty: number;
   comment: string | null;
+  is_owner_review: boolean;
   created_at: string;
+  profiles?: {
+    display_name: string | null;
+    email: string | null;
+    role: "owner" | "friend";
+  } | null;
 };
 
 export type Game = {
