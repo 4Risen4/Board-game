@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://board-game-rose.vercel.app";
 
 type TelegramMessage = {
   message?: {
