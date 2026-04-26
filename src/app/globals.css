@@ -104,6 +104,7 @@ h2 {
 
 .ghost-button,
 .primary-button,
+.danger-button,
 .tab {
   min-height: 42px;
   border: 0;
@@ -121,6 +122,52 @@ h2 {
   color: #fff;
   background: var(--green);
   padding: 0 18px;
+}
+
+.danger-button {
+  color: #fff;
+  background: var(--red);
+  padding: 0 18px;
+}
+
+.danger-button:disabled,
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+  margin: 18px 0;
+}
+
+.auth-switch button {
+  min-height: 42px;
+  border: 0;
+  color: var(--muted);
+  background: #f5f2ec;
+  font-weight: 800;
+}
+
+.auth-switch button.active {
+  color: #fff;
+  background: var(--green);
+}
+
+.link-button {
+  min-height: 0;
+  border: 0;
+  color: var(--green-dark);
+  background: transparent;
+  padding: 2px 0;
+  text-align: left;
+  font-weight: 800;
 }
 
 .summary-grid {
@@ -364,6 +411,14 @@ input[type="range"] {
   font-weight: 800;
 }
 
+.owner-mark {
+  display: block;
+  margin-top: 6px;
+  color: var(--green-dark);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
 .score-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -413,6 +468,22 @@ input[type="range"] {
   grid-template-columns: minmax(0, 1fr) repeat(2, minmax(110px, auto));
   gap: 12px;
   align-items: center;
+  padding: 14px;
+}
+
+.owner-review,
+.owner-review-form {
+  border-color: rgba(196, 154, 53, 0.7);
+  background: #fffaf0;
+}
+
+.owner-review {
+  box-shadow: inset 4px 0 0 var(--gold);
+}
+
+.owner-review-form {
+  border: 1px solid rgba(196, 154, 53, 0.7);
+  border-radius: 8px;
   padding: 14px;
 }
 
