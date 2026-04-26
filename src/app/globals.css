@@ -419,6 +419,7 @@ input[type="range"] {
   padding: 20px;
   color: inherit;
   text-align: left;
+  cursor: pointer;
 }
 
 .game-card.selected {
@@ -484,6 +485,28 @@ input[type="range"] {
   color: var(--muted);
   line-height: 1.45;
   max-width: 68ch;
+}
+
+.description-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 28px;
+  border: 1px solid rgba(47, 132, 102, 0.24);
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: #f2faf5;
+  padding: 0 10px;
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 8px 20px rgba(47, 132, 102, 0.08);
+}
+
+.description-toggle:hover {
+  border-color: rgba(47, 132, 102, 0.4);
+  background: #e8f5ee;
 }
 
 .review-count {
@@ -1047,6 +1070,18 @@ input[type="range"] {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     line-height: 1.3;
+  }
+
+  .game-copy p.expanded {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
+
+  .description-toggle {
+    display: inline-flex;
+    margin-top: 6px;
+    font-size: 0.78rem;
   }
 
   .review-count {

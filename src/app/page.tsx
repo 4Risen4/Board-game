@@ -9,6 +9,7 @@ type View = "rating" | "details";
 type AuthMode = "signin" | "signup";
 
 const bucketName = "covers";
+const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
@@ -18,6 +19,7 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState("");
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [viewAsFriend, setViewAsFriend] = useState(false);
   const [reviewFun, setReviewFun] = useState(8);
@@ -331,7 +333,7 @@ export default function Home() {
   }
 
   async function copyShareLink() {
-    const link = window.location.origin;
+    const link = publicSiteUrl || window.location.origin;
 
     try {
       await navigator.clipboard.writeText(link);
@@ -599,11 +601,15 @@ export default function Home() {
                   <div className="ranking-item" key={game.id}>
                     <GameCard
                       game={game}
-                      rank={index + 1}
-                      selected={game.id === selectedGame?.id}
-                      userReviewed={session.user ? Boolean(getUserReview(game, session.user.id)) : false}
-                      onSelect={() => setSelectedGameId(game.id)}
-                    />
+                    rank={index + 1}
+                    selected={game.id === selectedGame?.id}
+                    userReviewed={session.user ? Boolean(getUserReview(game, session.user.id)) : false}
+                    descriptionExpanded={expandedDescriptionId === game.id}
+                    onToggleDescription={() =>
+                      setExpandedDescriptionId((current) => (current === game.id ? "" : game.id))
+                    }
+                    onSelect={() => setSelectedGameId(game.id)}
+                  />
                     {game.id === selectedGame?.id && (
                       <RatingComments
                         game={game}
@@ -695,26 +701,55 @@ function GameCard({
   rank,
   selected,
   userReviewed,
+  descriptionExpanded,
+  onToggleDescription,
   onSelect,
 }: {
   game: Game;
   rank: number;
   selected: boolean;
   userReviewed: boolean;
+  descriptionExpanded: boolean;
+  onToggleDescription: () => void;
   onSelect: () => void;
 }) {
   const friendReviews = publicReviews(game);
   const ownerReview = getOwnerReview(game);
   const funAverage = average(friendReviews, "fun");
   const difficultyAverage = average(friendReviews, "difficulty");
+  const description = game.description || "Описание пока не добавлено.";
+  const canExpandDescription = description.length > 120;
 
   return (
-    <button className={`game-card ${selected ? "selected" : ""}`} type="button" onClick={onSelect}>
+    <article
+      className={`game-card ${selected ? "selected" : ""}`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="rank-badge">{rank}</div>
       <Cover game={game} />
       <div className="game-copy">
         <h3>{game.title}</h3>
-        <p>{game.description || "Описание пока не добавлено."}</p>
+        <p className={descriptionExpanded ? "expanded" : ""}>{description}</p>
+        {canExpandDescription && (
+          <button
+            className="description-toggle"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleDescription();
+            }}
+          >
+            {descriptionExpanded ? "Свернуть описание" : "Показать полностью"}
+          </button>
+        )}
         <span className="review-count">{friendReviews.length} оценок друзей</span>
         {userReviewed && <span className="reviewed-mark">Ты уже оценил</span>}
         {ownerReview && <span className="owner-mark">Есть мнение Амирана</span>}
@@ -723,7 +758,7 @@ function GameCard({
         <Score label="Популярность" value={funAverage} />
         <Score label="Сложность" value={difficultyAverage} difficulty />
       </div>
-    </button>
+    </article>
   );
 }
 
