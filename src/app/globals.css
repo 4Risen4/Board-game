@@ -742,6 +742,17 @@ input[type="range"] {
   border-radius: 8px;
   background: #fff;
   padding: 14px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.inline-review-form.review-saved {
+  border-color: rgba(47, 125, 100, 0.75);
+  background: #f4fbf7;
+  box-shadow: 0 14px 34px rgba(47, 125, 100, 0.18);
+  animation: saved-pulse 520ms ease-out;
 }
 
 .inline-review-heading {
@@ -764,6 +775,44 @@ input[type="range"] {
 
 .inline-review-heading .primary-button {
   flex: 0 0 auto;
+}
+
+.save-feedback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(47, 125, 100, 0.22);
+  border-radius: 8px;
+  color: var(--green-dark);
+  background: #eef8f2;
+  padding: 0 12px;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    max-height 220ms ease,
+    padding 220ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.save-feedback.show {
+  max-height: 48px;
+  padding: 9px 12px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.save-feedback span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--green);
+  font-weight: 900;
 }
 
 .inline-review-grid {
@@ -822,6 +871,14 @@ input[type="range"] {
   margin-bottom: 6px;
 }
 
+.comment-card-heading,
+.review-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .comment-card p {
   margin: 0;
   color: var(--ink);
@@ -855,6 +912,20 @@ input[type="range"] {
   }
 }
 
+@keyframes saved-pulse {
+  0% {
+    transform: scale(0.99);
+  }
+
+  55% {
+    transform: scale(1.01);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
 .review-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) repeat(2, minmax(110px, auto));
@@ -881,6 +952,33 @@ input[type="range"] {
 
 .review-row strong {
   display: block;
+}
+
+.review-delete-button {
+  border: 1px solid rgba(184, 74, 74, 0.22);
+  border-radius: 999px;
+  color: var(--red);
+  background: rgba(184, 74, 74, 0.08);
+  padding: 7px 10px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.review-delete-button:hover {
+  background: rgba(184, 74, 74, 0.14);
+  box-shadow: 0 8px 18px rgba(184, 74, 74, 0.12);
+  transform: translateY(-1px);
+}
+
+.review-delete-button.compact {
+  padding: 6px 9px;
 }
 
 .review-row span,
@@ -988,6 +1086,11 @@ input[type="range"] {
 
   .comment-scores {
     grid-template-columns: 1fr;
+  }
+
+  .comment-card-heading,
+  .review-row-heading {
+    align-items: flex-start;
   }
 
   .inline-review-heading {
@@ -1153,6 +1256,11 @@ input[type="range"] {
     display: inline-flex;
     margin-top: 6px;
     font-size: 0.78rem;
+  }
+
+  .review-delete-button {
+    padding: 7px 9px;
+    font-size: 0.74rem;
   }
 
   .review-count {

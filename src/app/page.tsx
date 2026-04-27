@@ -25,6 +25,8 @@ export default function Home() {
   const [viewAsFriend, setViewAsFriend] = useState(false);
   const [reviewFun, setReviewFun] = useState(8);
   const [reviewDifficulty, setReviewDifficulty] = useState(5);
+  const [savingReview, setSavingReview] = useState(false);
+  const [savedReviewGameId, setSavedReviewGameId] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -285,9 +287,32 @@ export default function Home() {
     loadGames();
   }
 
+  async function deleteReview(game: Game, review: Review) {
+    if (!canManageGames || review.is_owner_review) return;
+
+    const reviewer = displayReviewer(review);
+    const confirmed = window.confirm(
+      `Удалить оценку от ${reviewer} для игры "${game.title}"? Комментарий тоже удалится.`,
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("reviews").delete().eq("id", review.id);
+
+    if (error) {
+      setFormMessage(error.message);
+      return;
+    }
+
+    setFormMessage(`Оценка от ${reviewer} удалена.`);
+    loadGames();
+  }
+
   async function addReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.user || !selectedGame || !profile) return;
+
+    setSavingReview(true);
+    setSavedReviewGameId("");
 
     const form = new FormData(event.currentTarget);
     const fun = Number(form.get("fun") || 8);
@@ -295,6 +320,7 @@ export default function Home() {
     const comment = String(form.get("comment") || "").trim();
     const reviewerName = profile.display_name || profile.email?.split("@")[0] || "Друг";
 
+    const reviewGameId = selectedGame.id;
     const existingReview = getUserReview(selectedGame, session.user.id);
     const reviewPayload = {
       friend_name: reviewerName,
@@ -314,6 +340,7 @@ export default function Home() {
 
     if (error) {
       setFormMessage(error.code === "23505" ? "Ты уже оставил оценку для этой игры." : error.message);
+      setSavingReview(false);
       return;
     }
 
@@ -321,15 +348,20 @@ export default function Home() {
       event.currentTarget.reset();
     }
 
-    setFormMessage(
-      existingReview
-        ? isOwner
-          ? "Мнение Амирана обновлено."
-          : "Оценка обновлена."
-        : isOwner
-          ? "Мнение Амирана сохранено отдельно."
-          : "Оценка сохранена.",
-    );
+    const nextMessage = existingReview
+      ? isOwner
+        ? "Мнение Амирана обновлено."
+        : "Оценка обновлена."
+      : isOwner
+        ? "Мнение Амирана сохранено отдельно."
+        : "Оценка сохранена.";
+
+    setFormMessage(nextMessage);
+    setSavedReviewGameId(reviewGameId);
+    setSavingReview(false);
+    window.setTimeout(() => {
+      setSavedReviewGameId((current) => (current === reviewGameId ? "" : current));
+    }, 2600);
     loadGames();
   }
 
@@ -641,9 +673,13 @@ export default function Home() {
                         reviewFormLooksOwner={reviewFormLooksOwner}
                         reviewFun={reviewFun}
                         reviewDifficulty={reviewDifficulty}
+                        saving={savingReview}
+                        saved={savedReviewGameId === game.id}
                         setReviewFun={setReviewFun}
                         setReviewDifficulty={setReviewDifficulty}
                         onSubmit={addReview}
+                        canDeleteReviews={canManageGames}
+                        onDeleteReview={deleteReview}
                       />
                     )}
                   </div>
@@ -664,6 +700,8 @@ export default function Home() {
                 selectedGameId={selectedGame?.id || ""}
                 currentUserId={session.user.id}
                 onSelect={setSelectedGameId}
+                canDeleteReviews={canManageGames}
+                onDeleteReview={deleteReview}
               />
               {!games.length && <div className="empty-state">Пока нет игр. Когда появится первая игра, здесь будут оценки друзей.</div>}
             </section>
@@ -791,11 +829,15 @@ function GamePicker({
   selectedGameId,
   currentUserId,
   onSelect,
+  canDeleteReviews = false,
+  onDeleteReview,
 }: {
   games: Game[];
   selectedGameId: string;
   currentUserId: string;
   onSelect: (gameId: string) => void;
+  canDeleteReviews?: boolean;
+  onDeleteReview?: (game: Game, review: Review) => void;
 }) {
   if (!games.length) {
     return null;
@@ -816,7 +858,14 @@ function GamePicker({
               {getUserReview(game, currentUserId) && <small>Ты уже оценил</small>}
             </span>
           </button>
-          {game.id === selectedGameId && <ReviewDetails game={game} compact />}
+          {game.id === selectedGameId && (
+            <ReviewDetails
+              game={game}
+              compact
+              canDeleteReviews={canDeleteReviews}
+              onDeleteReview={onDeleteReview}
+            />
+          )}
         </div>
       ))}
     </div>
@@ -889,7 +938,17 @@ function GameCard({
   );
 }
 
-function ReviewDetails({ game, compact = false }: { game: Game; compact?: boolean }) {
+function ReviewDetails({
+  game,
+  compact = false,
+  canDeleteReviews = false,
+  onDeleteReview,
+}: {
+  game: Game;
+  compact?: boolean;
+  canDeleteReviews?: boolean;
+  onDeleteReview?: (game: Game, review: Review) => void;
+}) {
   const ownerReview = getOwnerReview(game);
   const friendReviews = publicReviews(game);
 
@@ -908,7 +967,13 @@ function ReviewDetails({ game, compact = false }: { game: Game; compact?: boolea
       {ownerReview && <ReviewRow game={game} review={ownerReview} owner />}
 
       {friendReviews.map((review) => (
-        <ReviewRow game={game} review={review} key={review.id} />
+        <ReviewRow
+          game={game}
+          review={review}
+          key={review.id}
+          canDelete={canDeleteReviews}
+          onDelete={onDeleteReview}
+        />
       ))}
 
       {!ownerReview && !friendReviews.length && (
@@ -924,18 +989,26 @@ function RatingComments({
   reviewFormLooksOwner,
   reviewFun,
   reviewDifficulty,
+  saving,
+  saved,
   setReviewFun,
   setReviewDifficulty,
   onSubmit,
+  canDeleteReviews = false,
+  onDeleteReview,
 }: {
   game: Game;
   selectedReview: Review | null;
   reviewFormLooksOwner: boolean;
   reviewFun: number;
   reviewDifficulty: number;
+  saving: boolean;
+  saved: boolean;
   setReviewFun: (value: number) => void;
   setReviewDifficulty: (value: number) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  canDeleteReviews?: boolean;
+  onDeleteReview?: (game: Game, review: Review) => void;
 }) {
   const comments = publicReviews(game).filter((review) => (review.comment || "").trim());
 
@@ -947,6 +1020,8 @@ function RatingComments({
         reviewFormLooksOwner={reviewFormLooksOwner}
         reviewFun={reviewFun}
         reviewDifficulty={reviewDifficulty}
+        saving={saving}
+        saved={saved}
         setReviewFun={setReviewFun}
         setReviewDifficulty={setReviewDifficulty}
         onSubmit={onSubmit}
@@ -965,7 +1040,18 @@ function RatingComments({
           {comments.map((review) => (
             <article className="comment-card" key={review.id}>
               <div>
-                <strong>{displayReviewer(review)}</strong>
+                <div className="comment-card-heading">
+                  <strong>{displayReviewer(review)}</strong>
+                  {canDeleteReviews && onDeleteReview && (
+                    <button
+                      className="review-delete-button compact"
+                      type="button"
+                      onClick={() => onDeleteReview(game, review)}
+                    >
+                      Удалить
+                    </button>
+                  )}
+                </div>
                 <p>{review.comment || ""}</p>
               </div>
               <div className="comment-scores">
@@ -988,6 +1074,8 @@ function ReviewEditor({
   reviewFormLooksOwner,
   reviewFun,
   reviewDifficulty,
+  saving,
+  saved,
   setReviewFun,
   setReviewDifficulty,
   onSubmit,
@@ -997,6 +1085,8 @@ function ReviewEditor({
   reviewFormLooksOwner: boolean;
   reviewFun: number;
   reviewDifficulty: number;
+  saving: boolean;
+  saved: boolean;
   setReviewFun: (value: number) => void;
   setReviewDifficulty: (value: number) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1005,7 +1095,7 @@ function ReviewEditor({
     <form
       key={`${game.id}-${selectedReview?.id || "new"}`}
       onSubmit={onSubmit}
-      className={`inline-review-form ${reviewFormLooksOwner ? "owner-review-form" : ""}`}
+      className={`inline-review-form ${reviewFormLooksOwner ? "owner-review-form" : ""} ${saved ? "review-saved" : ""}`}
     >
       <div className="inline-review-heading">
         <div>
@@ -1020,9 +1110,14 @@ function ReviewEditor({
                 : "Добавить оценку"}
           </h3>
         </div>
-        <button className="primary-button" type="submit">
-          {selectedReview ? "Обновить" : reviewFormLooksOwner ? "Сохранить мнение" : "Сохранить оценку"}
+        <button className="primary-button" type="submit" disabled={saving}>
+          {saving ? "Сохраняю..." : selectedReview ? "Обновить" : reviewFormLooksOwner ? "Сохранить мнение" : "Сохранить оценку"}
         </button>
+      </div>
+
+      <div className={`save-feedback ${saved ? "show" : ""}`} aria-live="polite">
+        <span>✓</span>
+        <strong>{selectedReview ? "Обновлено" : "Оценка сохранена"}</strong>
       </div>
 
       <div className="inline-review-grid">
@@ -1069,11 +1164,34 @@ function ReviewEditor({
   );
 }
 
-function ReviewRow({ game, review, owner = false }: { game: Game; review: Review; owner?: boolean }) {
+function ReviewRow({
+  game,
+  review,
+  owner = false,
+  canDelete = false,
+  onDelete,
+}: {
+  game: Game;
+  review: Review;
+  owner?: boolean;
+  canDelete?: boolean;
+  onDelete?: (game: Game, review: Review) => void;
+}) {
   return (
     <div className={`review-row ${owner ? "owner-review" : ""}`}>
       <div>
-        <strong>{owner ? "Мнение Амирана" : displayReviewer(review)}</strong>
+        <div className="review-row-heading">
+          <strong>{owner ? "Мнение Амирана" : displayReviewer(review)}</strong>
+          {canDelete && !owner && onDelete && (
+            <button
+              className="review-delete-button"
+              type="button"
+              onClick={() => onDelete(game, review)}
+            >
+              Удалить оценку
+            </button>
+          )}
+        </div>
         <span>{game.title}</span>
         <p className={`review-comment ${review.comment ? "" : "muted-comment"}`}>
           {review.comment || "Без комментария"}
