@@ -5,7 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Game, Profile, Review, ReviewProfile } from "@/lib/supabase";
 
-type View = "rating" | "details";
+type View = "rating" | "details" | "profile";
 type AuthMode = "signin" | "signup";
 
 const bucketName = "covers";
@@ -29,9 +29,9 @@ export default function Home() {
   const [savedReviewGameId, setSavedReviewGameId] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const selectedGame = games.find((game) => game.id === selectedGameId) || games[0];
+  const selectedGame = selectedGameId ? games.find((game) => game.id === selectedGameId) || null : null;
   const isOwner = profile?.role === "owner";
   const canManageGames = isOwner && !viewAsFriend;
   const reviewFormLooksOwner = isOwner && !viewAsFriend;
@@ -39,10 +39,10 @@ export default function Home() {
 
   const sortedGames = useMemo(() => {
     return [...games].sort((first, second) => {
-      const friendScoreDifference = total(publicReviews(second), "fun") - total(publicReviews(first), "fun");
-      if (friendScoreDifference !== 0) return friendScoreDifference;
+      const scoreDifference = total(scoredReviews(second), "fun") - total(scoredReviews(first), "fun");
+      if (scoreDifference !== 0) return scoreDifference;
 
-      return ownerTieScore(second) - ownerTieScore(first);
+      return average(scoredReviews(second), "difficulty") - average(scoredReviews(first), "difficulty");
     });
   }, [games]);
 
@@ -51,18 +51,40 @@ export default function Home() {
   }, [games]);
 
   const reviewsCount = useMemo(() => {
-    return games.reduce((count, game) => count + publicReviews(game).length, 0);
+    return games.reduce((count, game) => count + scoredReviews(game).length, 0);
   }, [games]);
 
   useEffect(() => {
+    let isMounted = true;
+
     if (window.location.hash.includes("type=recovery")) {
       setPasswordRecovery(true);
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
+    const loadingTimer = window.setTimeout(() => {
+      if (isMounted) {
+        setLoading(false);
+      }
+    }, 5000);
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (isMounted) {
+          setSession(data.session);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setAuthMessage("Не получилось проверить вход. Попробуй обновить страницу или войти снова.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          window.clearTimeout(loadingTimer);
+          setLoading(false);
+        }
+      });
 
     const {
       data: { subscription },
@@ -73,7 +95,11 @@ export default function Home() {
       setSession(nextSession);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      window.clearTimeout(loadingTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -119,7 +145,7 @@ export default function Home() {
 
     const loadedGames = (data || []) as unknown as Game[];
     setGames(loadedGames);
-    setSelectedGameId((current) => current || loadedGames[0]?.id || "");
+    setSelectedGameId((current) => (current && loadedGames.some((game) => game.id === current) ? current : ""));
   }
 
   async function signUp(event: FormEvent<HTMLFormElement>) {
@@ -545,12 +571,12 @@ export default function Home() {
 
       <section className="summary-grid">
         <Summary value={games.length} label="игр" />
-        <Summary value={reviewsCount} label="оценок друзей" />
+        <Summary value={reviewsCount} label="оценок" />
         <Summary value={friendsCount} label="друзей" />
       </section>
 
       <section className="workspace">
-        <aside className="panel input-panel">
+        <aside className={`panel input-panel ${canManageGames ? "" : "profile-only-panel"}`}>
           <form onSubmit={updateProfile} className="stack profile-form">
             <h2>Мой профиль</h2>
             <label>
@@ -650,7 +676,7 @@ export default function Home() {
             <section className="view active">
               <div className="section-heading">
                 <h2>Общий рейтинг игр</h2>
-                <p>В среднем рейтинге учитываются только оценки друзей. Твоё мнение показывается отдельно.</p>
+                <p>В среднем рейтинге учитываются оценки друзей и мнение Амирана. Отдельно всё равно видно, кто что поставил.</p>
               </div>
               <div className="ranking-list">
                 {sortedGames.map((game, index) => (
@@ -658,15 +684,15 @@ export default function Home() {
                     <GameCard
                       game={game}
                     rank={index + 1}
-                    selected={game.id === selectedGame?.id}
+                    selected={game.id === selectedGameId}
                     userReviewed={session.user ? Boolean(getUserReview(game, session.user.id)) : false}
                     descriptionExpanded={expandedDescriptionId === game.id}
                     onToggleDescription={() =>
                       setExpandedDescriptionId((current) => (current === game.id ? "" : game.id))
                     }
-                    onSelect={() => setSelectedGameId(game.id)}
+                    onSelect={() => setSelectedGameId((current) => (current === game.id ? "" : game.id))}
                   />
-                    {game.id === selectedGame?.id && (
+                    {game.id === selectedGameId && (
                       <RatingComments
                         game={game}
                         selectedReview={mySelectedReview}
@@ -687,7 +713,7 @@ export default function Home() {
                 {!games.length && <div className="empty-state">Пока нет игр. Сначала добавь игру, а потом друзья смогут её оценить.</div>}
               </div>
             </section>
-          ) : (
+          ) : view === "details" ? (
             <section className="view active">
               <div className="section-heading split">
                 <div>
@@ -697,7 +723,7 @@ export default function Home() {
               </div>
               <GamePicker
                 games={games}
-                selectedGameId={selectedGame?.id || ""}
+                selectedGameId={selectedGameId}
                 currentUserId={session.user.id}
                 onSelect={setSelectedGameId}
                 canDeleteReviews={canManageGames}
@@ -705,9 +731,74 @@ export default function Home() {
               />
               {!games.length && <div className="empty-state">Пока нет игр. Когда появится первая игра, здесь будут оценки друзей.</div>}
             </section>
+          ) : (
+            <section className="view active mobile-profile-view">
+              <div className="section-heading">
+                <h2>Мой профиль</h2>
+                <p>Здесь можно поменять ник и привязать Telegram.</p>
+              </div>
+              <form onSubmit={updateProfile} className="stack profile-form">
+                <label>
+                  Ник
+                  <input key={`mobile-${profile?.id}`} name="displayName" defaultValue={profile?.display_name || "Amiran"} required />
+                </label>
+                <button className="ghost-button" type="submit">
+                  Сохранить ник
+                </button>
+                <div className="telegram-card">
+                  <div>
+                    <strong>Telegram</strong>
+                    <span>
+                      {profile?.telegram_username
+                        ? `@${profile.telegram_username}`
+                        : profile?.telegram_id
+                          ? "Привязан"
+                          : "Можно привязать для быстрого входа"}
+                    </span>
+                  </div>
+                  <TelegramLoginButton
+                    compact
+                    session={session}
+                    onLinked={() => {
+                      setFormMessage("Telegram привязан к аккаунту.");
+                      loadProfile();
+                    }}
+                    onMessage={setFormMessage}
+                  />
+                </div>
+              </form>
+              {formMessage && <p className="form-message calm">{formMessage}</p>}
+            </section>
           )}
         </section>
       </section>
+
+      <nav className="mobile-tabbar" aria-label="Переключение разделов">
+        <button
+          className={`mobile-tabbar-button ${view === "rating" ? "active" : ""}`}
+          onClick={() => setView("rating")}
+          type="button"
+        >
+          <span aria-hidden="true" className="tab-icon star" />
+          Рейтинг
+        </button>
+        <button
+          className={`mobile-tabbar-button ${view === "details" ? "active" : ""}`}
+          onClick={() => setView("details")}
+          type="button"
+        >
+          <span aria-hidden="true" className="tab-icon list" />
+          Оценки друзей
+        </button>
+        <button
+          className={`mobile-tabbar-button ${view === "profile" ? "active" : ""}`}
+          onClick={() => setView("profile")}
+          type="button"
+        >
+          <span aria-hidden="true" className="tab-icon profile" />
+          Профиль
+        </button>
+      </nav>
     </main>
   );
 }
@@ -850,7 +941,7 @@ function GamePicker({
           <button
             className={`game-picker-button ${game.id === selectedGameId ? "selected" : ""}`}
             type="button"
-            onClick={() => onSelect(game.id)}
+            onClick={() => onSelect(game.id === selectedGameId ? "" : game.id)}
           >
             <GameThumb game={game} />
             <span>
@@ -890,9 +981,10 @@ function GameCard({
   onSelect: () => void;
 }) {
   const friendReviews = publicReviews(game);
+  const ratingReviews = scoredReviews(game);
   const ownerReview = getOwnerReview(game);
-  const funAverage = average(friendReviews, "fun");
-  const difficultyAverage = average(friendReviews, "difficulty");
+  const funAverage = average(ratingReviews, "fun");
+  const difficultyAverage = average(ratingReviews, "difficulty");
   const description = game.description || "Описание пока не добавлено.";
   const canExpandDescription = description.length > 120;
 
@@ -1237,12 +1329,12 @@ function publicReviews(game: Game) {
   return game.reviews.filter((review) => !review.is_owner_review);
 }
 
-function getOwnerReview(game: Game) {
-  return game.reviews.find((review) => review.is_owner_review);
+function scoredReviews(game: Game) {
+  return game.reviews;
 }
 
-function ownerTieScore(game: Game) {
-  return getOwnerReview(game)?.fun || 0;
+function getOwnerReview(game: Game) {
+  return game.reviews.find((review) => review.is_owner_review);
 }
 
 function getUserReview(game: Game, userId: string) {
