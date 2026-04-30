@@ -5,8 +5,20 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Game, Profile, Review, ReviewProfile } from "@/lib/supabase";
 
-type View = "rating" | "details" | "profile";
+type View = "rating" | "details" | "friends" | "profile";
 type AuthMode = "signin" | "signup";
+
+type FriendStats = {
+  id: string;
+  name: string;
+  email: string | null;
+  isOwner: boolean;
+  reviews: Array<{ game: Game; review: Review }>;
+  gamesCount: number;
+  commentsCount: number;
+  averageFun: number;
+  averageDifficulty: number;
+};
 
 const bucketName = "covers";
 const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -15,11 +27,13 @@ const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim(
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [view, setView] = useState<View>("rating");
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
+  const [selectedFriendId, setSelectedFriendId] = useState("");
   const [expandedDescriptionId, setExpandedDescriptionId] = useState("");
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [viewAsFriend, setViewAsFriend] = useState(false);
@@ -53,6 +67,8 @@ export default function Home() {
   const reviewsCount = useMemo(() => {
     return games.reduce((count, game) => count + scoredReviews(game).length, 0);
   }, [games]);
+
+  const friendStats = useMemo(() => buildFriendStats(games, profiles), [games, profiles]);
 
   useEffect(() => {
     let isMounted = true;
@@ -105,11 +121,13 @@ export default function Home() {
   useEffect(() => {
     if (!session?.user) {
       setProfile(null);
+      setProfiles([]);
       setGames([]);
       return;
     }
 
     loadProfile();
+    loadProfiles();
     loadGames();
   }, [session]);
 
@@ -127,6 +145,17 @@ export default function Home() {
 
     if (!error && data) {
       setProfile(data);
+    }
+  }
+
+  async function loadProfiles() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,email,display_name,role,telegram_id,telegram_username,telegram_first_name,telegram_last_name,telegram_photo_url,telegram_linked_at")
+      .order("display_name", { ascending: true });
+
+    if (!error && data) {
+      setProfiles(data);
     }
   }
 
@@ -670,6 +699,9 @@ export default function Home() {
             <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")} type="button">
               Оценки друзей
             </button>
+            <button className={`tab ${view === "friends" ? "active" : ""}`} onClick={() => setView("friends")} type="button">
+              Друзья
+            </button>
           </div>
 
           {view === "rating" ? (
@@ -731,6 +763,21 @@ export default function Home() {
               />
               {!games.length && <div className="empty-state">Пока нет игр. Когда появится первая игра, здесь будут оценки друзей.</div>}
             </section>
+          ) : view === "friends" ? (
+            <section className="view active">
+              <div className="section-heading split">
+                <div>
+                  <h2>Друзья</h2>
+                  <p>Здесь видно, кто как оценивает игры, сколько оставил мнений и какие комментарии написал.</p>
+                </div>
+              </div>
+              <FriendsView
+                friends={friendStats}
+                selectedFriendId={selectedFriendId}
+                onSelect={(friendId) => setSelectedFriendId((current) => (current === friendId ? "" : friendId))}
+              />
+              {!friendStats.length && <div className="empty-state">Пока никто не оставил оценок. Как только появятся мнения, здесь будет список друзей.</div>}
+            </section>
           ) : (
             <section className="view active mobile-profile-view">
               <div className="section-heading">
@@ -788,7 +835,15 @@ export default function Home() {
           type="button"
         >
           <span aria-hidden="true" className="tab-icon list" />
-          Оценки друзей
+          Оценки
+        </button>
+        <button
+          className={`mobile-tabbar-button ${view === "friends" ? "active" : ""}`}
+          onClick={() => setView("friends")}
+          type="button"
+        >
+          <span aria-hidden="true" className="tab-icon people" />
+          Друзья
         </button>
         <button
           className={`mobile-tabbar-button ${view === "profile" ? "active" : ""}`}
@@ -1027,6 +1082,81 @@ function GameCard({
         <Score label="Сложность" value={difficultyAverage} difficulty />
       </div>
     </article>
+  );
+}
+
+function FriendsView({
+  friends,
+  selectedFriendId,
+  onSelect,
+}: {
+  friends: FriendStats[];
+  selectedFriendId: string;
+  onSelect: (friendId: string) => void;
+}) {
+  return (
+    <div className="friends-list">
+      {friends.map((friend) => {
+        const selected = selectedFriendId === friend.id;
+
+        return (
+          <article className={`friend-card ${friend.isOwner ? "owner" : ""} ${selected ? "selected" : ""}`} key={friend.id}>
+            <button className="friend-card-button" type="button" onClick={() => onSelect(friend.id)}>
+              <div className="friend-avatar">{initials(friend.name)}</div>
+              <div className="friend-card-main">
+                <div className="friend-card-title">
+                  <div>
+                    <h3>{friend.name}</h3>
+                    <span>{friend.isOwner ? "Владелец коллекции" : "Друг"}</span>
+                  </div>
+                  <strong>{friend.reviews.length}</strong>
+                </div>
+                <div className="friend-stat-grid">
+                  <span>
+                    <strong>{friend.gamesCount}</strong>
+                    игр
+                  </span>
+                  <span>
+                    <strong>{friend.commentsCount}</strong>
+                    комм.
+                  </span>
+                  <span>
+                    <strong>{friend.averageFun ? friend.averageFun.toFixed(1) : "нет"}</strong>
+                    нравится
+                  </span>
+                  <span>
+                    <strong>{friend.averageDifficulty ? friend.averageDifficulty.toFixed(1) : "нет"}</strong>
+                    сложность
+                  </span>
+                </div>
+              </div>
+            </button>
+
+            {selected && (
+              <div className="friend-review-list">
+                <div className="friend-review-heading">
+                  <span>{friend.isOwner ? "Мнение Амирана" : "Все оценки друга"}</span>
+                  <strong>{friend.reviews.length}</strong>
+                </div>
+                {friend.reviews.map(({ game, review }) => (
+                  <article className="friend-review-card" key={review.id}>
+                    <GameThumb game={game} />
+                    <div>
+                      <h4>{game.title}</h4>
+                      <p className={review.comment ? "" : "muted-comment"}>{review.comment || "Без комментария"}</p>
+                      <div className="friend-review-scores">
+                        <span>Понравилось {review.fun}/10</span>
+                        <span>Сложность {review.difficulty}/10</span>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1339,6 +1469,71 @@ function getOwnerReview(game: Game) {
 
 function getUserReview(game: Game, userId: string) {
   return game.reviews.find((review) => review.user_id === userId) || null;
+}
+
+function buildFriendStats(games: Game[], profiles: Profile[]): FriendStats[] {
+  const stats = new Map<string, FriendStats>();
+
+  for (const profile of profiles) {
+    const name = profile.role === "owner" ? "Amiran" : profile.display_name || profile.email?.split("@")[0] || "Друг";
+
+    stats.set(profile.id, {
+      id: profile.id,
+      name,
+      email: profile.email || null,
+      isOwner: profile.role === "owner",
+      reviews: [],
+      gamesCount: 0,
+      commentsCount: 0,
+      averageFun: 0,
+      averageDifficulty: 0,
+    });
+  }
+
+  for (const game of games) {
+    for (const review of game.reviews) {
+      const profile = getReviewProfile(review.profiles);
+      const name = review.is_owner_review ? "Amiran" : displayReviewer(review);
+      const current =
+        stats.get(review.user_id) ||
+        ({
+          id: review.user_id,
+          name,
+          email: profile?.email || null,
+          isOwner: review.is_owner_review || profile?.role === "owner",
+          reviews: [],
+          gamesCount: 0,
+          commentsCount: 0,
+          averageFun: 0,
+          averageDifficulty: 0,
+        } satisfies FriendStats);
+
+      current.name = current.isOwner ? "Amiran" : current.name || name;
+      current.email = current.email || profile?.email || null;
+      current.isOwner = current.isOwner || review.is_owner_review || profile?.role === "owner";
+      current.reviews.push({ game, review });
+      stats.set(review.user_id, current);
+    }
+  }
+
+  return [...stats.values()]
+    .map((friend) => {
+      const reviews = friend.reviews.map(({ review }) => review);
+      const gamesCount = new Set(friend.reviews.map(({ game }) => game.id)).size;
+
+      return {
+        ...friend,
+        gamesCount,
+        commentsCount: reviews.filter((review) => (review.comment || "").trim()).length,
+        averageFun: average(reviews, "fun"),
+        averageDifficulty: average(reviews, "difficulty"),
+      };
+    })
+    .sort((first, second) => {
+      if (first.isOwner !== second.isOwner) return first.isOwner ? -1 : 1;
+      if (second.reviews.length !== first.reviews.length) return second.reviews.length - first.reviews.length;
+      return first.name.localeCompare(second.name, "ru");
+    });
 }
 
 function displayReviewer(review: Review) {

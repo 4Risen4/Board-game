@@ -417,7 +417,7 @@ input[type="range"] {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1px;
   background: var(--line);
   border-bottom: 1px solid var(--line);
@@ -726,6 +726,202 @@ input[type="range"] {
   padding: 12px;
   animation: reveal-comments 220ms ease-out;
   transform-origin: top;
+}
+
+.friends-list {
+  display: grid;
+  gap: 12px;
+}
+
+.friend-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.friend-card.owner {
+  border-color: rgba(45, 128, 93, 0.34);
+  background: linear-gradient(135deg, #fff 0%, #f3faf6 100%);
+}
+
+.friend-card.selected {
+  border-color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green), 0 14px 30px rgba(47, 132, 102, 0.12);
+}
+
+.friend-card-button {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 14px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.friend-avatar {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  color: #fff;
+  background: var(--blue);
+  font-size: 1.2rem;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(49, 105, 153, 0.16);
+}
+
+.friend-card.owner .friend-avatar {
+  background: var(--green);
+  box-shadow: 0 10px 22px rgba(47, 132, 102, 0.18);
+}
+
+.friend-card-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.friend-card-title {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.friend-card-title h3 {
+  margin: 0 0 3px;
+  font-size: 1.1rem;
+}
+
+.friend-card-title span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-card-title > strong {
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: var(--blue);
+  background: #edf4fa;
+  font-size: 1.15rem;
+}
+
+.friend-card.owner .friend-card-title > strong {
+  color: var(--green-dark);
+  background: #e8f3ed;
+}
+
+.friend-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.friend-stat-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid rgba(222, 215, 204, 0.78);
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.78);
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.friend-stat-grid strong {
+  color: var(--ink);
+  font-size: 1.04rem;
+}
+
+.friend-review-list {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: #fbf8f1;
+  padding: 12px 14px 14px 86px;
+  animation: reveal-comments 220ms ease-out;
+  transform-origin: top;
+}
+
+.friend-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--green-dark);
+  text-transform: uppercase;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.friend-review-heading strong {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: #fff;
+  background: var(--blue);
+  font-size: 0.9rem;
+}
+
+.friend-review-card {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid rgba(49, 105, 153, 0.55);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.friend-review-card h4 {
+  margin: 0 0 5px;
+  font-size: 0.95rem;
+}
+
+.friend-review-card p {
+  margin: 0 0 8px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.friend-review-scores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.friend-review-scores span {
+  border-radius: 8px;
+  background: #edf4fa;
+  padding: 7px 8px;
+  color: var(--blue);
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 900;
 }
 
 .rating-comments {
@@ -1097,7 +1293,7 @@ input[type="range"] {
     left: max(12px, env(safe-area-inset-left));
     z-index: 20;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 7px;
     max-width: 680px;
     margin: 0 auto;
@@ -1187,6 +1383,29 @@ input[type="range"] {
     transform: rotate(45deg) scale(0.78);
   }
 
+  .mobile-tabbar-button .tab-icon.people {
+    position: relative;
+  }
+
+  .mobile-tabbar-button .tab-icon.people::before {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: -6px 2px 0 -2px currentColor, 6px 2px 0 -2px currentColor;
+  }
+
+  .mobile-tabbar-button .tab-icon.people::after {
+    position: absolute;
+    top: 15px;
+    left: 50%;
+    width: 16px;
+    height: 6px;
+    border-radius: 999px 999px 4px 4px;
+    background: currentColor;
+    transform: translateX(-50%);
+  }
+
   .mobile-tabbar-button.active {
     color: #fff;
     background: var(--green);
@@ -1200,6 +1419,76 @@ input[type="range"] {
 
   .view {
     padding: 16px;
+  }
+
+  .friends-list {
+    gap: 10px;
+  }
+
+  .friend-card-button {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .friend-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    font-size: 1rem;
+  }
+
+  .friend-card-main {
+    gap: 9px;
+  }
+
+  .friend-card-title h3 {
+    font-size: 1rem;
+  }
+
+  .friend-card-title span {
+    max-width: 210px;
+    font-size: 0.74rem;
+  }
+
+  .friend-card-title > strong {
+    min-width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    font-size: 1rem;
+  }
+
+  .friend-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .friend-stat-grid span {
+    padding: 7px;
+    font-size: 0.7rem;
+  }
+
+  .friend-stat-grid strong {
+    font-size: 0.98rem;
+  }
+
+  .friend-review-list {
+    padding: 10px;
+  }
+
+  .friend-review-card {
+    grid-template-columns: 46px minmax(0, 1fr);
+    padding: 9px;
+  }
+
+  .friend-review-card .game-picker-cover {
+    width: 46px;
+    height: 46px;
+  }
+
+  .friend-review-scores {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .selected-game-summary,
@@ -1429,6 +1718,10 @@ input[type="range"] {
     display: block;
     overflow: visible;
     -webkit-line-clamp: unset;
+    color: #69737e;
+    font-size: 0.8rem;
+    font-weight: 560;
+    line-height: 1.3;
   }
 
   .description-toggle {
